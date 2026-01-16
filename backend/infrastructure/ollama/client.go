@@ -16,20 +16,166 @@ import (
 	"github.com/secusense/backend/internal/domain"
 )
 
+const (
+	DefaultLocalModel = "llama3.2"
+	DefaultCloudModel = "gemini-3-flash-preview"
+)
+
 type Client struct {
 	baseURL    string
 	model      string
+	cloudMode  bool
+	apiKey     string
 	httpClient *http.Client
 }
 
+type tagsResponse struct {
+	Models []modelInfo `json:"models"`
+}
+
+type modelInfo struct {
+	Name string `json:"name"`
+}
+
+type pullRequest struct {
+	Model  string `json:"model"`
+	Stream bool   `json:"stream"`
+}
+
+type pullResponse struct {
+	Status string `json:"status"`
+}
+
 func NewClient(cfg config.OllamaConfig) *Client {
-	return &Client{
-		baseURL: cfg.BaseURL,
-		model:   cfg.Model,
+	c := &Client{
+		baseURL:   cfg.BaseURL,
+		cloudMode: cfg.CloudMode,
+		apiKey:    cfg.APIKey,
 		httpClient: &http.Client{
 			Timeout: cfg.Timeout,
 		},
 	}
+
+	// Determine model: use config if set, otherwise use default based on mode
+	if cfg.Model != "" {
+		c.model = cfg.Model
+	} else if c.cloudMode {
+		c.model = DefaultCloudModel
+	} else {
+		c.model = DefaultLocalModel
+	}
+
+	log.Printf("Ollama client initialized: baseURL=%s, model=%s, cloudMode=%v", c.baseURL, c.model, c.cloudMode)
+
+	// Ensure model is available (async to not block startup)
+	go c.ensureModelAvailable()
+
+	return c
+}
+
+// ensureModelAvailable checks if the model exists and pulls it if necessary
+func (c *Client) ensureModelAvailable() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	exists, err := c.modelExists(ctx, c.model)
+	if err != nil {
+		log.Printf("Warning: Failed to check if model %s exists: %v", c.model, err)
+		return
+	}
+
+	if exists {
+		log.Printf("Model %s is already available", c.model)
+		return
+	}
+
+	log.Printf("Model %s not found, pulling...", c.model)
+	if err := c.pullModel(ctx, c.model); err != nil {
+		log.Printf("Error: Failed to pull model %s: %v", c.model, err)
+		return
+	}
+	log.Printf("Model %s pulled successfully", c.model)
+}
+
+// setAuthHeader adds Authorization header if API key is configured
+func (c *Client) setAuthHeader(req *http.Request) {
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+}
+
+// modelExists checks if a model is available locally
+func (c *Client) modelExists(ctx context.Context, modelName string) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/api/tags", nil)
+	if err != nil {
+		return false, err
+	}
+	c.setAuthHeader(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("tags endpoint returned status %d", resp.StatusCode)
+	}
+
+	var tags tagsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		return false, err
+	}
+
+	// Check if model exists (handle both exact match and name:tag format)
+	baseName := strings.Split(modelName, ":")[0]
+	for _, m := range tags.Models {
+		if m.Name == modelName || strings.HasPrefix(m.Name, baseName+":") {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// pullModel pulls a model from the Ollama registry
+func (c *Client) pullModel(ctx context.Context, modelName string) error {
+	pullReq := pullRequest{
+		Model:  modelName,
+		Stream: false,
+	}
+
+	body, err := json.Marshal(pullReq)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/pull", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.setAuthHeader(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("pull failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Read response to ensure pull completed
+	var pullResp pullResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pullResp); err != nil {
+		// Non-streaming mode may have multiple JSON objects, just read and discard
+		io.Copy(io.Discard, resp.Body)
+	}
+
+	return nil
 }
 
 type generateRequest struct {
@@ -82,6 +228,7 @@ func (c *Client) GenerateCourseContent(ctx context.Context, req *domain.Generate
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.setAuthHeader(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -537,6 +684,7 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	c.setAuthHeader(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -22,8 +22,9 @@ jwt:
 
 ollama:
   baseUrl: "http://localhost:11434"
-  model: "llama3.2"
+  model: ""  # Auto-select: llama3.2 for local, gemini-3-flash-preview for cloud
   timeout: "5m"
+  cloudMode: false  # Set to true for Ollama Cloud
 
 synthesia:
   apiKey: "a08295b0a30d9f0bd0d8d9a2e6afcf6d"

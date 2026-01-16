@@ -13,6 +13,166 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+OLLAMA_KEY_FILE="$SCRIPT_DIR/.ollama_api_key"
+SYNTHESIA_KEY_FILE="$SCRIPT_DIR/.synthesia_api_key"
+
+# Get or prompt for Ollama Cloud API key
+get_ollama_api_key() {
+    local key=""
+
+    # Try to load existing key
+    if [[ -f "$OLLAMA_KEY_FILE" ]]; then
+        key=$(cat "$OLLAMA_KEY_FILE" 2>/dev/null)
+        if [[ -n "$key" ]]; then
+            echo "$key"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+# Prompt for API key (TUI version) - sets OLLAMA_API_KEY variable
+prompt_api_key_tui() {
+    local cmd=$1
+    OLLAMA_API_KEY=""
+
+    # Check for existing key
+    if OLLAMA_API_KEY=$(get_ollama_api_key); then
+        if $cmd --title "Ollama Cloud" --yesno "Found saved API key.\n\nUse existing key?" 10 50; then
+            return 0
+        fi
+        OLLAMA_API_KEY=""
+    fi
+
+    # Prompt for new key
+    OLLAMA_API_KEY=$($cmd --title "Ollama Cloud API Key" \
+        --inputbox "Enter your Ollama API key:\n\n(Get one at https://ollama.com/settings/keys)" 12 60 \
+        3>&1 1>&2 2>&3) || return 1
+
+    if [[ -z "$OLLAMA_API_KEY" ]]; then
+        $cmd --title "Error" --msgbox "API key is required for Ollama Cloud." 8 50
+        return 1
+    fi
+
+    # Save the key
+    echo "$OLLAMA_API_KEY" > "$OLLAMA_KEY_FILE"
+    chmod 600 "$OLLAMA_KEY_FILE"
+}
+
+# Prompt for API key (simple version)
+prompt_api_key_simple() {
+    local key=""
+
+    # Check for existing key
+    if key=$(get_ollama_api_key); then
+        echo -e "${GREEN}Found saved API key.${NC}"
+        read -p "Use existing key? [Y/n]: " use_existing
+        if [[ ! "$use_existing" =~ ^[Nn]$ ]]; then
+            echo "$key"
+            return 0
+        fi
+    fi
+
+    # Prompt for new key
+    echo ""
+    echo -e "${CYAN}Get your API key at: https://ollama.com/settings/keys${NC}"
+    echo ""
+    read -p "Enter Ollama API key: " key
+
+    if [[ -z "$key" ]]; then
+        echo -e "${RED}API key is required for Ollama Cloud.${NC}"
+        return 1
+    fi
+
+    # Save the key
+    echo "$key" > "$OLLAMA_KEY_FILE"
+    chmod 600 "$OLLAMA_KEY_FILE"
+    echo "$key"
+}
+
+# Get or prompt for Synthesia API key
+get_synthesia_api_key() {
+    local key=""
+
+    # Try to load existing key
+    if [[ -f "$SYNTHESIA_KEY_FILE" ]]; then
+        key=$(cat "$SYNTHESIA_KEY_FILE" 2>/dev/null)
+        if [[ -n "$key" ]]; then
+            echo "$key"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+# Prompt for Synthesia API key (TUI version) - sets SYNTHESIA_API_KEY variable
+prompt_synthesia_key_tui() {
+    local cmd=$1
+    SYNTHESIA_API_KEY=""
+
+    # Check for existing key
+    if SYNTHESIA_API_KEY=$(get_synthesia_api_key); then
+        if $cmd --title "Synthesia" --yesno "Found saved Synthesia API key.\n\nUse existing key?" 10 50; then
+            return 0
+        fi
+        SYNTHESIA_API_KEY=""
+    fi
+
+    # Ask if they want to configure Synthesia
+    if ! $cmd --title "Synthesia Video Generation" --yesno "Configure Synthesia for AI video generation?\n\n(Optional - courses will work without it)" 10 55; then
+        return 0
+    fi
+
+    # Prompt for new key
+    SYNTHESIA_API_KEY=$($cmd --title "Synthesia API Key" \
+        --inputbox "Enter your Synthesia API key:\n\n(Get one at synthesia.io)" 12 60 \
+        3>&1 1>&2 2>&3) || return 0
+
+    if [[ -n "$SYNTHESIA_API_KEY" ]]; then
+        # Save the key
+        echo "$SYNTHESIA_API_KEY" > "$SYNTHESIA_KEY_FILE"
+        chmod 600 "$SYNTHESIA_KEY_FILE"
+    fi
+}
+
+# Prompt for Synthesia API key (simple version)
+prompt_synthesia_key_simple() {
+    local key=""
+
+    # Check for existing key
+    if key=$(get_synthesia_api_key); then
+        echo -e "${GREEN}Found saved Synthesia API key.${NC}"
+        read -p "Use existing key? [Y/n]: " use_existing
+        if [[ ! "$use_existing" =~ ^[Nn]$ ]]; then
+            echo "$key"
+            return 0
+        fi
+    fi
+
+    # Ask if they want to configure Synthesia
+    echo ""
+    read -p "Configure Synthesia for AI video generation? (optional) [y/N]: " configure
+    if [[ ! "$configure" =~ ^[Yy]$ ]]; then
+        echo ""
+        return 0
+    fi
+
+    # Prompt for new key
+    echo ""
+    echo -e "${CYAN}Get your API key at: https://synthesia.io${NC}"
+    echo ""
+    read -p "Enter Synthesia API key (or press Enter to skip): " key
+
+    if [[ -n "$key" ]]; then
+        # Save the key
+        echo "$key" > "$SYNTHESIA_KEY_FILE"
+        chmod 600 "$SYNTHESIA_KEY_FILE"
+    fi
+    echo "$key"
+}
+
 # Detect if native Ollama is running
 check_native_ollama() {
     if curl -s --connect-timeout 2 http://localhost:11434/api/tags >/dev/null 2>&1; then
@@ -24,21 +184,26 @@ check_native_ollama() {
 # Start services based on selection
 start_services() {
     local ollama_mode=$1
+    local ollama_key=$2
+    local synthesia_key=$3
 
     echo -e "${CYAN}Starting SecuSense...${NC}"
+
+    # Build environment variables
+    local env_vars="SYNTHESIA_APIKEY=\"$synthesia_key\""
 
     case $ollama_mode in
         docker)
             echo -e "${BLUE}Starting with Docker Ollama${NC}"
-            OLLAMA_URL="http://ollama:11434" docker compose --profile with-ollama up -d
+            OLLAMA_URL="http://ollama:11434" SYNTHESIA_APIKEY="$synthesia_key" docker compose --profile with-ollama up -d
             ;;
         cloud)
             echo -e "${BLUE}Using Ollama Cloud${NC}"
-            OLLAMA_URL="https://api.ollama.com" docker compose up -d
+            OLLAMA_URL="https://ollama.com" OLLAMA_CLOUDMODE=true OLLAMA_APIKEY="$ollama_key" SYNTHESIA_APIKEY="$synthesia_key" docker compose up -d
             ;;
         *)
             echo -e "${BLUE}Using native Ollama (host.docker.internal:11434)${NC}"
-            docker compose up -d
+            SYNTHESIA_APIKEY="$synthesia_key" docker compose up -d
             ;;
     esac
 
@@ -90,24 +255,31 @@ show_tui_menu() {
         "stop" "Stop all services" \
         3>&1 1>&2 2>&3) || exit 0
 
+    # Handle stop separately (no API key prompts needed)
+    if [[ "$choice" == "stop" ]]; then
+        echo -e "${CYAN}Stopping SecuSense...${NC}"
+        docker compose --profile with-ollama down
+        echo -e "${GREEN}Stopped.${NC}"
+        return
+    fi
+
+    # Prompt for Synthesia key (used by all modes) - sets SYNTHESIA_API_KEY
+    prompt_synthesia_key_tui "$cmd"
+
     case $choice in
         native)
             if ! check_native_ollama; then
                 $cmd --title "Warning" --yesno "Native Ollama not detected.\n\nMake sure Ollama is running:\n  ollama serve\n\nContinue anyway?" 12 50 || exit 0
             fi
-            start_services "native"
+            start_services "native" "" "$SYNTHESIA_API_KEY"
             ;;
         docker)
-            start_services "docker"
+            start_services "docker" "" "$SYNTHESIA_API_KEY"
             ;;
         cloud)
-            $cmd --title "Ollama Cloud" --msgbox "Using Ollama Cloud.\n\nMake sure you have:\n1. An Ollama account at ollama.com\n2. Run 'ollama login' locally first to authenticate\n\nCloud models will be fetched on-demand." 14 55
-            start_services "cloud"
-            ;;
-        stop)
-            echo -e "${CYAN}Stopping SecuSense...${NC}"
-            docker compose --profile with-ollama down
-            echo -e "${GREEN}Stopped.${NC}"
+            # Prompt for Ollama key - sets OLLAMA_API_KEY
+            prompt_api_key_tui "$cmd" || exit 0
+            start_services "cloud" "$OLLAMA_API_KEY" "$SYNTHESIA_API_KEY"
             ;;
     esac
 }
@@ -141,6 +313,12 @@ show_simple_menu() {
 
     read -p "Enter choice [1-5]: " choice
 
+    # Skip Synthesia prompt for stop/exit
+    local synthesia_key=""
+    if [[ "$choice" =~ ^[1-3]$ ]]; then
+        synthesia_key=$(prompt_synthesia_key_simple)
+    fi
+
     case $choice in
         1)
             if ! check_native_ollama; then
@@ -148,19 +326,16 @@ show_simple_menu() {
                 read -p "Continue anyway? [y/N]: " confirm
                 [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
             fi
-            start_services "native"
+            start_services "native" "" "$synthesia_key"
             ;;
         2)
-            start_services "docker"
+            start_services "docker" "" "$synthesia_key"
             ;;
         3)
             echo -e "${CYAN}Using Ollama Cloud.${NC}"
-            echo ""
-            echo "Make sure you have:"
-            echo "  1. An Ollama account at ollama.com"
-            echo "  2. Run 'ollama login' locally first to authenticate"
-            echo ""
-            start_services "cloud"
+            local ollama_key
+            ollama_key=$(prompt_api_key_simple) || exit 0
+            start_services "cloud" "$ollama_key" "$synthesia_key"
             ;;
         4)
             echo -e "${CYAN}Stopping SecuSense...${NC}"

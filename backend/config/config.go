@@ -39,9 +39,11 @@ type JWTConfig struct {
 }
 
 type OllamaConfig struct {
-	BaseURL string
-	Model   string
-	Timeout time.Duration
+	BaseURL     string
+	Model       string
+	Timeout     time.Duration
+	CloudMode   bool
+	APIKey      string // API key for Ollama Cloud authentication
 }
 
 type SynthesiaConfig struct {
@@ -74,8 +76,9 @@ func Load() (*Config, error) {
 	viper.SetDefault("jwt.issuer", "secusense")
 
 	viper.SetDefault("ollama.baseUrl", "http://localhost:11434")
-	viper.SetDefault("ollama.model", "llama3.2")
+	viper.SetDefault("ollama.model", "")
 	viper.SetDefault("ollama.timeout", "5m")
+	viper.SetDefault("ollama.cloudMode", false)
 
 	viper.SetDefault("synthesia.baseUrl", "https://api.synthesia.io/v2")
 	viper.SetDefault("synthesia.avatarId", "anna_costume1_cameraA")
@@ -93,6 +96,9 @@ func Load() (*Config, error) {
 	viper.BindEnv("database.dbname", "SECUSENSE_DATABASE_DBNAME")
 	viper.BindEnv("jwt.secret", "SECUSENSE_JWT_SECRET")
 	viper.BindEnv("ollama.baseUrl", "SECUSENSE_OLLAMA_BASEURL")
+	viper.BindEnv("ollama.cloudMode", "SECUSENSE_OLLAMA_CLOUDMODE")
+	viper.BindEnv("ollama.apiKey", "SECUSENSE_OLLAMA_APIKEY")
+	viper.BindEnv("synthesia.apiKey", "SECUSENSE_SYNTHESIA_APIKEY")
 	viper.BindEnv("server.allowOrigins", "SECUSENSE_SERVER_ALLOWORIGINS")
 
 	// Read config file if exists
@@ -127,9 +133,11 @@ func Load() (*Config, error) {
 			Issuer:           viper.GetString("jwt.issuer"),
 		},
 		Ollama: OllamaConfig{
-			BaseURL: viper.GetString("ollama.baseUrl"),
-			Model:   viper.GetString("ollama.model"),
-			Timeout: ollamaTimeout,
+			BaseURL:   viper.GetString("ollama.baseUrl"),
+			Model:     viper.GetString("ollama.model"),
+			Timeout:   ollamaTimeout,
+			CloudMode: viper.GetBool("ollama.cloudMode"),
+			APIKey:    viper.GetString("ollama.apiKey"),
 		},
 		Synthesia: SynthesiaConfig{
 			APIKey:     viper.GetString("synthesia.apiKey"),

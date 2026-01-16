@@ -22,6 +22,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: secusense-api
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -32,6 +35,9 @@ services:
       SECUSENSE_DATABASE_DBNAME: secusense
       SECUSENSE_JWT_SECRET: your-super-secret-jwt-key-change-in-production
       SECUSENSE_OLLAMA_BASEURL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      SECUSENSE_OLLAMA_CLOUDMODE: ${OLLAMA_CLOUDMODE:-false}
+      SECUSENSE_OLLAMA_APIKEY: ${OLLAMA_APIKEY:-}
+      SECUSENSE_SYNTHESIA_APIKEY: ${SYNTHESIA_APIKEY:-}
       SECUSENSE_SERVER_ALLOWORIGINS: http://localhost:4200,http://localhost
     ports:
       - "8080:8080"

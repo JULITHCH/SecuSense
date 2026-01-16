@@ -49,3 +49,5 @@ coverage/
 # Misc
 *.bak
 *.tmp
+.ollama_api_key
+.synthesia_api_key
