@@ -23,27 +23,40 @@ check_native_ollama() {
 
 # Start services based on selection
 start_services() {
-    local use_docker_ollama=$1
+    local ollama_mode=$1
 
     echo -e "${CYAN}Starting SecuSense...${NC}"
 
-    if [ "$use_docker_ollama" = "true" ]; then
-        echo -e "${BLUE}Starting with Docker Ollama${NC}"
-        OLLAMA_URL="http://ollama:11434" docker compose --profile with-ollama up -d
-    else
-        echo -e "${BLUE}Using native Ollama (host.docker.internal:11434)${NC}"
-        docker compose up -d
-    fi
+    case $ollama_mode in
+        docker)
+            echo -e "${BLUE}Starting with Docker Ollama${NC}"
+            OLLAMA_URL="http://ollama:11434" docker compose --profile with-ollama up -d
+            ;;
+        cloud)
+            echo -e "${BLUE}Using Ollama Cloud${NC}"
+            OLLAMA_URL="https://api.ollama.com" docker compose up -d
+            ;;
+        *)
+            echo -e "${BLUE}Using native Ollama (host.docker.internal:11434)${NC}"
+            docker compose up -d
+            ;;
+    esac
 
     echo ""
     echo -e "${GREEN}${BOLD}SecuSense is running!${NC}"
     echo -e "  Frontend: ${CYAN}http://localhost${NC}"
     echo -e "  API:      ${CYAN}http://localhost:8080${NC}"
-    if [ "$use_docker_ollama" = "true" ]; then
-        echo -e "  Ollama:   ${CYAN}http://localhost:11434${NC} (Docker)"
-    else
-        echo -e "  Ollama:   ${CYAN}http://localhost:11434${NC} (Native)"
-    fi
+    case $ollama_mode in
+        docker)
+            echo -e "  Ollama:   ${CYAN}http://localhost:11434${NC} (Docker)"
+            ;;
+        cloud)
+            echo -e "  Ollama:   ${CYAN}Ollama Cloud${NC} (no local GPU required)"
+            ;;
+        *)
+            echo -e "  Ollama:   ${CYAN}http://localhost:11434${NC} (Native)"
+            ;;
+    esac
 }
 
 # TUI menu using whiptail or dialog
@@ -70,9 +83,10 @@ show_tui_menu() {
 
     local choice
     choice=$($cmd --title "SecuSense Launcher" \
-        --menu "Select Ollama configuration:\n\nNative Ollama$native_status" 15 60 3 \
+        --menu "Select Ollama configuration:\n\nNative Ollama$native_status" 18 60 4 \
         "native" "Use native Ollama (recommended if installed)" \
         "docker" "Start Ollama in Docker" \
+        "cloud" "Use Ollama Cloud (no GPU required)" \
         "stop" "Stop all services" \
         3>&1 1>&2 2>&3) || exit 0
 
@@ -81,10 +95,14 @@ show_tui_menu() {
             if ! check_native_ollama; then
                 $cmd --title "Warning" --yesno "Native Ollama not detected.\n\nMake sure Ollama is running:\n  ollama serve\n\nContinue anyway?" 12 50 || exit 0
             fi
-            start_services "false"
+            start_services "native"
             ;;
         docker)
-            start_services "true"
+            start_services "docker"
+            ;;
+        cloud)
+            $cmd --title "Ollama Cloud" --msgbox "Using Ollama Cloud.\n\nMake sure you have:\n1. An Ollama account at ollama.com\n2. Run 'ollama login' locally first to authenticate\n\nCloud models will be fetched on-demand." 14 55
+            start_services "cloud"
             ;;
         stop)
             echo -e "${CYAN}Stopping SecuSense...${NC}"
@@ -116,11 +134,12 @@ show_simple_menu() {
     echo ""
     echo "  1) Use native Ollama (recommended if installed)"
     echo "  2) Start Ollama in Docker"
-    echo "  3) Stop all services"
-    echo "  4) Exit"
+    echo "  3) Use Ollama Cloud (no GPU required)"
+    echo "  4) Stop all services"
+    echo "  5) Exit"
     echo ""
 
-    read -p "Enter choice [1-4]: " choice
+    read -p "Enter choice [1-5]: " choice
 
     case $choice in
         1)
@@ -129,17 +148,26 @@ show_simple_menu() {
                 read -p "Continue anyway? [y/N]: " confirm
                 [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
             fi
-            start_services "false"
+            start_services "native"
             ;;
         2)
-            start_services "true"
+            start_services "docker"
             ;;
         3)
+            echo -e "${CYAN}Using Ollama Cloud.${NC}"
+            echo ""
+            echo "Make sure you have:"
+            echo "  1. An Ollama account at ollama.com"
+            echo "  2. Run 'ollama login' locally first to authenticate"
+            echo ""
+            start_services "cloud"
+            ;;
+        4)
             echo -e "${CYAN}Stopping SecuSense...${NC}"
             docker compose --profile with-ollama down
             echo -e "${GREEN}Stopped.${NC}"
             ;;
-        4|*)
+        5|*)
             exit 0
             ;;
     esac
