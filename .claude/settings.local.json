@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(go mod init:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker compose:*)",
+      "Bash(lsof:*)",
+      "Bash(curl:*)",
+      "Bash(docker exec:*)",
+      "Bash(ACCESS_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI0ZDQzYmZhMS1iNWUyLTQxMzctYTZkNS1iMDEzMzc2MzM4M2IiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20iLCJyb2xlIjoidXNlciIsImlzcyI6InNlY3VzZW5zZSIsInN1YiI6IjRkNDNiZmExLWI1ZTItNDEzNy1hNmQ1LWIwMTMzNzYzMzgzYiIsImV4cCI6MTc2ODU1OTA4NywiaWF0IjoxNzY4NTU4MTg3fQ.YAXsMB7Rhfo4tut3B7ni0nvwwe2bxg8KEKx7kMbRHvg\")",
+      "Bash(USER_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI0ZDQzYmZhMS1iNWUyLTQxMzctYTZkNS1iMDEzMzc2MzM4M2IiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20iLCJyb2xlIjoidXNlciIsImlzcyI6InNlY3VzZW5zZSIsInN1YiI6IjRkNDNiZmExLWI1ZTItNDEzNy1hNmQ1LWIwMTMzNzYzMzgzYiIsImV4cCI6MTc2ODU1OTk0NywiaWF0IjoxNzY4NTU5MDQ3fQ.uHd7xJ-Ypj_QtnkvgMsqXrV664vaI1QRligxVJkYx_k\")",
+      "Bash(__NEW_LINE_773d68ce4501f840__ echo \"=== 1. Check User''s Certificates ===\")",
+      "Bash(__NEW_LINE_3bfb6ea13d2dd869__ echo \"\")",
+      "Bash(python3:*)",
+      "Bash(__NEW_LINE_d56564f4c8b7fd05__ echo \"\")",
+      "Bash(__NEW_LINE_bdb733e00a9548c7__ echo \"\")",
+      "Bash(__NEW_LINE_7165762a80da7eda__ echo \"\")",
+      "Bash(__NEW_LINE_7f4fee62d3c77f37__ echo \"\")",
+      "Bash(__NEW_LINE_3b7d850b9efbe639__ echo \"\")",
+      "Bash(__NEW_LINE_a5ffff476b0a3476__ echo \"\")",
+      "Bash(__NEW_LINE_e14023535ca46047__ echo \"\")",
+      "Bash(COURSE_ID=\"ccbe20cd-b795-49ad-90cf-5930382b8296\")",
+      "Bash(TEST_ID=\"e6f2d98d-4c85-42bd-93fa-ea5cbeb5520c\":*)",
+      "Bash(__NEW_LINE_b0709c230a776e44__ echo \"=== Check generated course ===\")",
+      "Bash(__NEW_LINE_b0709c230a776e44__ echo \"\")",
+      "Bash(__NEW_LINE_d83d58bc4c0f1155__ echo \"=== Check full course content outline ===\")",
+      "Bash(__NEW_LINE_d83d58bc4c0f1155__ echo \"\")",
+      "Bash(docker logs:*)",
+      "WebFetch(domain:docs.synthesia.io)",
+      "Bash(fi)",
+      "Bash(git init:*)"
+    ]
+  }
+}

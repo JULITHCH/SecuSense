@@ -1,0 +1,32 @@
+server:
+  port: "8080"
+  environment: "development"
+  allowOrigins:
+    - "http://localhost:4200"
+    - "http://localhost:80"
+    - "http://localhost"
+
+database:
+  host: "localhost"
+  port: 5433
+  user: "secusense"
+  password: "secusense"
+  dbname: "secusense"
+  sslmode: "disable"
+
+jwt:
+  secret: "your-super-secret-jwt-key-change-in-production"
+  accessExpiresIn: "15m"
+  refreshExpiresIn: "168h"
+  issuer: "secusense"
+
+ollama:
+  baseUrl: "http://localhost:11434"
+  model: "llama3.2"
+  timeout: "5m"
+
+synthesia:
+  apiKey: "a08295b0a30d9f0bd0d8d9a2e6afcf6d"
+  baseUrl: "https://api.synthesia.io/v2"
+  webhookUrl: ""
+  avatarId: "anna_costume1_cameraA"

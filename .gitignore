@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
+
+# Go
+/backend/main
+/backend/tmp/
+
+# Angular
+/frontend/.angular/
+/frontend/coverage/
+
+# Test
+coverage/
+*.cover
+*.out
+
+# Misc
+*.bak
+*.tmp

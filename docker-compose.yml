@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: secusense-db
+    environment:
+      POSTGRES_USER: secusense
+      POSTGRES_PASSWORD: secusense
+      POSTGRES_DB: secusense
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secusense"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: secusense-api
+    environment:
+      SECUSENSE_DATABASE_HOST: postgres
+      SECUSENSE_DATABASE_PORT: 5432
+      SECUSENSE_DATABASE_USER: secusense
+      SECUSENSE_DATABASE_PASSWORD: secusense
+      SECUSENSE_DATABASE_DBNAME: secusense
+      SECUSENSE_JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      SECUSENSE_OLLAMA_BASEURL: http://ollama:11434
+      SECUSENSE_SERVER_ALLOWORIGINS: http://localhost:4200,http://localhost
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: secusense-web
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: secusense-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  postgres_data:
+  ollama_data:
