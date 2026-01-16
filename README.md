@@ -49,6 +49,18 @@ docker-compose up -d
 # - Ollama: http://localhost:11434
 ```
 
+### Default Admin Credentials
+
+A default admin user is created by the database migrations:
+
+| Field    | Value                    |
+|----------|--------------------------|
+| Email    | `admin@secusense.local`  |
+| Password | `admin123`               |
+| Role     | `admin`                  |
+
+**Important:** Change this password immediately after first login in production environments.
+
 ### Local Development
 
 #### Backend

@@ -22,6 +22,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: secusense-api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       SECUSENSE_DATABASE_HOST: postgres
       SECUSENSE_DATABASE_PORT: 5432
@@ -29,7 +31,7 @@ services:
       SECUSENSE_DATABASE_PASSWORD: secusense
       SECUSENSE_DATABASE_DBNAME: secusense
       SECUSENSE_JWT_SECRET: your-super-secret-jwt-key-change-in-production
-      SECUSENSE_OLLAMA_BASEURL: http://ollama:11434
+      SECUSENSE_OLLAMA_BASEURL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       SECUSENSE_SERVER_ALLOWORIGINS: http://localhost:4200,http://localhost
     ports:
       - "8080:8080"
@@ -53,6 +55,8 @@ services:
       - backend
 
   ollama:
+    profiles:
+      - with-ollama
     image: ollama/ollama:latest
     container_name: secusense-ollama
     ports:
