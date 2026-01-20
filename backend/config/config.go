@@ -14,6 +14,8 @@ type Config struct {
 	JWT       JWTConfig
 	Ollama    OllamaConfig
 	Synthesia SynthesiaConfig
+	TTS       TTSConfig
+	Unsplash  UnsplashConfig
 }
 
 type ServerConfig struct {
@@ -53,6 +55,16 @@ type SynthesiaConfig struct {
 	AvatarID   string
 }
 
+type TTSConfig struct {
+	Voice     string
+	OutputDir string
+}
+
+type UnsplashConfig struct {
+	AccessKey string
+	BaseURL   string
+}
+
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -83,6 +95,11 @@ func Load() (*Config, error) {
 	viper.SetDefault("synthesia.baseUrl", "https://api.synthesia.io/v2")
 	viper.SetDefault("synthesia.avatarId", "anna_costume1_cameraA")
 
+	viper.SetDefault("tts.voice", "de-DE-KatjaNeural")
+	viper.SetDefault("tts.outputDir", "./generated/audio")
+
+	viper.SetDefault("unsplash.baseUrl", "https://api.unsplash.com")
+
 	// Environment variable bindings
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("SECUSENSE")
@@ -100,6 +117,9 @@ func Load() (*Config, error) {
 	viper.BindEnv("ollama.apiKey", "SECUSENSE_OLLAMA_APIKEY")
 	viper.BindEnv("synthesia.apiKey", "SECUSENSE_SYNTHESIA_APIKEY")
 	viper.BindEnv("server.allowOrigins", "SECUSENSE_SERVER_ALLOWORIGINS")
+	viper.BindEnv("tts.voice", "SECUSENSE_TTS_VOICE")
+	viper.BindEnv("tts.outputDir", "SECUSENSE_TTS_OUTPUTDIR")
+	viper.BindEnv("unsplash.accessKey", "SECUSENSE_UNSPLASH_ACCESSKEY")
 
 	// Read config file if exists
 	if err := viper.ReadInConfig(); err != nil {
@@ -144,6 +164,14 @@ func Load() (*Config, error) {
 			BaseURL:    viper.GetString("synthesia.baseUrl"),
 			WebhookURL: viper.GetString("synthesia.webhookUrl"),
 			AvatarID:   viper.GetString("synthesia.avatarId"),
+		},
+		TTS: TTSConfig{
+			Voice:     viper.GetString("tts.voice"),
+			OutputDir: viper.GetString("tts.outputDir"),
+		},
+		Unsplash: UnsplashConfig{
+			AccessKey: viper.GetString("unsplash.accessKey"),
+			BaseURL:   viper.GetString("unsplash.baseUrl"),
 		},
 	}, nil
 }

@@ -325,3 +325,39 @@ func (uc *UseCase) PollPendingVideos(ctx context.Context) error {
 
 	return nil
 }
+
+// GetFreshVideoURL fetches a fresh signed URL from Synthesia for a course's video
+func (uc *UseCase) GetFreshVideoURL(ctx context.Context, courseID uuid.UUID) (string, error) {
+	course, err := uc.courseRepo.GetByID(courseID)
+	if err != nil {
+		return "", err
+	}
+	if course == nil {
+		return "", fmt.Errorf("course not found")
+	}
+	if course.SynthesiaVideoID == nil || *course.SynthesiaVideoID == "" {
+		return "", fmt.Errorf("no video available for this course")
+	}
+	if uc.synthesiaClient == nil {
+		return "", fmt.Errorf("synthesia client not configured")
+	}
+
+	// Get fresh URL from Synthesia
+	status, downloadURL, err := uc.synthesiaClient.GetVideoStatus(ctx, *course.SynthesiaVideoID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get video URL: %w", err)
+	}
+
+	if status != "complete" {
+		return "", fmt.Errorf("video is not ready yet (status: %s)", status)
+	}
+
+	// Update the stored URL
+	course.VideoURL = &downloadURL
+	if err := uc.courseRepo.Update(course); err != nil {
+		// Non-fatal, just log
+		println(fmt.Sprintf("Warning: Failed to update video URL in database: %v", err))
+	}
+
+	return downloadURL, nil
+}

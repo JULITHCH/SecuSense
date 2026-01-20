@@ -5,10 +5,13 @@ import { CardModule } from 'primeng/card';
 import { ButtonModule } from 'primeng/button';
 import { ProgressBarModule } from 'primeng/progressbar';
 import { SkeletonModule } from 'primeng/skeleton';
+import { DialogModule } from 'primeng/dialog';
+import { AccordionModule } from 'primeng/accordion';
 import { MessageService } from 'primeng/api';
-import { CourseService, Course } from '@core/services/course.service';
+import { CourseService, Course, CourseLesson } from '@core/services/course.service';
 import { EnrollmentService, Enrollment } from '@core/services/enrollment.service';
 import { AuthService } from '@core/services/auth.service';
+import { PresentationPlayerComponent } from '@shared/components/presentation-player/presentation-player.component';
 
 @Component({
   selector: 'app-course-detail',
@@ -19,7 +22,10 @@ import { AuthService } from '@core/services/auth.service';
     CardModule,
     ButtonModule,
     ProgressBarModule,
-    SkeletonModule
+    SkeletonModule,
+    DialogModule,
+    AccordionModule,
+    PresentationPlayerComponent
   ],
   template: `
     <div class="page-container">
@@ -35,36 +41,80 @@ import { AuthService } from '@core/services/auth.service';
         </div>
       } @else if (course()) {
         <div class="course-detail">
-          <div class="video-section">
-            @if (course()?.videoUrl) {
-              <div class="video-container">
-                <video
-                  #videoPlayer
-                  [src]="course()?.videoUrl"
-                  controls
-                  (timeupdate)="onVideoProgress($event)"
-                  (ended)="onVideoEnded()"
-                >
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-            } @else {
-              <div class="video-placeholder">
-                @if (course()?.videoStatus === 'pending' || course()?.videoStatus === 'processing') {
-                  <i class="pi pi-spin pi-spinner"></i>
-                  <p>Video is being generated...</p>
-                  <small>This may take a few minutes</small>
-                } @else if (course()?.videoStatus === 'failed') {
-                  <i class="pi pi-exclamation-circle"></i>
-                  <p>Video generation failed</p>
-                  <small>{{ course()?.videoError }}</small>
-                } @else {
-                  <i class="pi pi-video"></i>
-                  <p>Video content coming soon</p>
+          <!-- Lessons Section (for workflow-generated courses) -->
+          @if (lessons().length > 0) {
+            <div class="lessons-section">
+              <h2 class="lessons-title">Course Content</h2>
+              <div class="lessons-list">
+                @for (lesson of lessons(); track lesson.id; let i = $index) {
+                  <div class="lesson-card">
+                    <div class="lesson-header">
+                      <span class="lesson-number">{{ i + 1 }}</span>
+                      <h3>{{ lesson.title }}</h3>
+                      @if (lesson.outputType === 'presentation' && lesson.presentationStatus === 'completed') {
+                        <span class="lesson-badge presentation">
+                          <i class="pi pi-desktop"></i> Presentation
+                        </span>
+                      } @else if (lesson.outputType === 'video' && lesson.videoStatus === 'completed') {
+                        <span class="lesson-badge video">
+                          <i class="pi pi-video"></i> Video
+                        </span>
+                      }
+                    </div>
+                    <div class="lesson-actions">
+                      @if (lesson.outputType === 'presentation' && lesson.presentation) {
+                        <p-button
+                          label="Start Lesson"
+                          icon="pi pi-play"
+                          (onClick)="openPresentation(lesson)"
+                        ></p-button>
+                      } @else if (lesson.outputType === 'video' && lesson.videoUrl) {
+                        <p-button
+                          label="Watch Video"
+                          icon="pi pi-play"
+                          (onClick)="playVideo(lesson.videoUrl!)"
+                        ></p-button>
+                      } @else {
+                        <span class="coming-soon">Coming soon</span>
+                      }
+                    </div>
+                  </div>
                 }
               </div>
-            }
-          </div>
+            </div>
+          } @else {
+            <!-- Fallback to single video (for quick-generated courses) -->
+            <div class="video-section">
+              @if (course()?.videoUrl) {
+                <div class="video-container">
+                  <video
+                    #videoPlayer
+                    [src]="course()?.videoUrl"
+                    controls
+                    (timeupdate)="onVideoProgress($event)"
+                    (ended)="onVideoEnded()"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+              } @else {
+                <div class="video-placeholder">
+                  @if (course()?.videoStatus === 'pending' || course()?.videoStatus === 'processing') {
+                    <i class="pi pi-spin pi-spinner"></i>
+                    <p>Video is being generated...</p>
+                    <small>This may take a few minutes</small>
+                  } @else if (course()?.videoStatus === 'failed') {
+                    <i class="pi pi-exclamation-circle"></i>
+                    <p>Video generation failed</p>
+                    <small>{{ course()?.videoError }}</small>
+                  } @else {
+                    <i class="pi pi-video"></i>
+                    <p>Video content coming soon</p>
+                  }
+                </div>
+              }
+            </div>
+          }
 
           <div class="course-info">
             <h1>{{ course()?.title }}</h1>
@@ -122,6 +172,46 @@ import { AuthService } from '@core/services/auth.service';
           </a>
         </div>
       }
+
+      <!-- Presentation Dialog -->
+      <p-dialog
+        header="Lesson"
+        [(visible)]="showPresentationDialog"
+        [modal]="true"
+        [style]="{ width: '90vw', height: '90vh' }"
+        [maximizable]="true"
+        (onHide)="onPresentationClose()"
+      >
+        @if (currentLesson()?.presentation) {
+          <app-presentation-player
+            [slides]="currentLesson()!.presentation!.slides"
+            [autoPlay]="true">
+          </app-presentation-player>
+        }
+      </p-dialog>
+
+      <!-- Video Dialog -->
+      <p-dialog
+        header="Video"
+        [(visible)]="showVideoDialog"
+        [modal]="true"
+        [style]="{ width: '90vw', height: '90vh' }"
+        [maximizable]="true"
+        (onHide)="onVideoDialogClose()"
+      >
+        @if (currentVideoUrl()) {
+          <div class="video-dialog-container">
+            <video
+              #dialogVideoPlayer
+              [src]="currentVideoUrl()"
+              controls
+              autoplay
+            >
+              Your browser does not support the video tag.
+            </video>
+          </div>
+        }
+      </p-dialog>
     </div>
   `,
   styles: [`
@@ -243,15 +333,125 @@ import { AuthService } from '@core/services/auth.service';
       text-align: center;
       padding: 4rem 2rem;
     }
+
+    .lessons-section {
+      margin-bottom: 2rem;
+    }
+
+    .lessons-title {
+      margin: 0 0 1.5rem;
+      color: var(--text-color);
+    }
+
+    .lessons-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .lesson-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.25rem 1.5rem;
+      background: var(--surface-card);
+      border-radius: 12px;
+      border: 1px solid var(--surface-border);
+      transition: box-shadow 0.2s;
+    }
+
+    .lesson-card:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .lesson-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .lesson-number {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--primary-color);
+      color: white;
+      font-weight: 600;
+      font-size: 0.875rem;
+    }
+
+    .lesson-header h3 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    .lesson-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 16px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .lesson-badge.presentation {
+      background: #e0f2fe;
+      color: #0369a1;
+    }
+
+    .lesson-badge.video {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .lesson-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .coming-soon {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      font-style: italic;
+    }
+
+    .video-dialog-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+
+    .video-dialog-container video {
+      max-width: 100%;
+      max-height: 100%;
+    }
   `]
 })
 export class CourseDetailComponent implements OnInit {
   @Input() id!: string;
 
   course = signal<Course | null>(null);
+  lessons = signal<CourseLesson[]>([]);
   enrollment = signal<Enrollment | null>(null);
   loading = signal(true);
   enrolling = signal(false);
+
+  // Presentation dialog
+  showPresentationDialog = false;
+  currentLesson = signal<CourseLesson | null>(null);
+
+  // Video dialog
+  showVideoDialog = false;
+  currentVideoUrl = signal<string | null>(null);
 
   constructor(
     private courseService: CourseService,
@@ -263,6 +463,7 @@ export class CourseDetailComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadCourse();
+    this.loadLessons();
     if (this.authService.isAuthenticated()) {
       this.loadEnrollment();
     }
@@ -278,6 +479,36 @@ export class CourseDetailComponent implements OnInit {
         this.loading.set(false);
       }
     });
+  }
+
+  loadLessons(): void {
+    this.courseService.getCourseLessons(this.id).subscribe({
+      next: (lessons) => {
+        this.lessons.set(lessons);
+      },
+      error: () => {
+        // No lessons available (e.g., quick-generated course)
+        this.lessons.set([]);
+      }
+    });
+  }
+
+  openPresentation(lesson: CourseLesson): void {
+    this.currentLesson.set(lesson);
+    this.showPresentationDialog = true;
+  }
+
+  onPresentationClose(): void {
+    this.currentLesson.set(null);
+  }
+
+  playVideo(url: string): void {
+    this.currentVideoUrl.set(url);
+    this.showVideoDialog = true;
+  }
+
+  onVideoDialogClose(): void {
+    this.currentVideoUrl.set(null);
   }
 
   loadEnrollment(): void {

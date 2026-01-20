@@ -29,7 +29,13 @@
       "Bash(docker logs:*)",
       "WebFetch(domain:docs.synthesia.io)",
       "Bash(fi)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker build:*)",
+      "Bash(go build:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(git add:*)",
+      "Bash(git reset:*)"
     ]
   }
 }

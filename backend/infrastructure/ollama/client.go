@@ -676,6 +676,316 @@ Each question should be worth 10 points for a total of 100 points.
 Ensure all JSON is properly formatted and valid.`, req.Topic, audience, difficulty, wordCount, duration)
 }
 
+// ====== Multi-Agency Workflow Methods ======
+
+// ResearchTopicSuggestions generates topic suggestions for a main topic (Research Agency)
+func (c *Client) ResearchTopicSuggestions(ctx context.Context, mainTopic, targetAudience, difficulty, language string, count int) ([]TopicSuggestionResult, error) {
+	if count <= 0 {
+		count = 6
+	}
+
+	prompt := c.buildResearchPrompt(mainTopic, targetAudience, difficulty, language, count)
+
+	result, err := c.generateJSON(ctx, prompt)
+	if err != nil {
+		return nil, err
+	}
+
+	var suggestions struct {
+		Suggestions []TopicSuggestionResult `json:"suggestions"`
+	}
+	if err := json.Unmarshal([]byte(result), &suggestions); err != nil {
+		return nil, fmt.Errorf("failed to parse suggestions: %w", err)
+	}
+
+	return suggestions.Suggestions, nil
+}
+
+// TopicSuggestionResult from the Research Agency
+type TopicSuggestionResult struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// getLanguageInstruction returns the instruction for generating content in the specified language
+func getLanguageInstruction(language string) string {
+	languageNames := map[string]string{
+		"en": "English",
+		"de": "German",
+		"fr": "French",
+		"es": "Spanish",
+		"it": "Italian",
+		"pt": "Portuguese",
+	}
+	langName, ok := languageNames[language]
+	if !ok {
+		langName = "English"
+	}
+	return fmt.Sprintf("IMPORTANT: Generate ALL content (titles, descriptions, text) in %s language.", langName)
+}
+
+func (c *Client) buildResearchPrompt(mainTopic, targetAudience, difficulty, language string, count int) string {
+	audience := targetAudience
+	if audience == "" {
+		audience = "professionals"
+	}
+	if difficulty == "" {
+		difficulty = "intermediate"
+	}
+	if language == "" {
+		language = "en"
+	}
+
+	languageInstruction := getLanguageInstruction(language)
+
+	return fmt.Sprintf(`You are a Research Agency specializing in cybersecurity training course design.
+
+Your task is to generate %d subtopic suggestions for a comprehensive training course on the following main topic:
+
+Main Topic: %s
+Target Audience: %s
+Difficulty Level: %s
+
+%s
+
+Generate specific, actionable subtopics that would make excellent individual training modules. Each subtopic should:
+1. Be focused and specific enough for a single lesson (5-15 minutes)
+2. Build practical skills the audience can apply immediately
+3. Cover different aspects of the main topic
+4. Progress logically from foundational to advanced concepts
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "suggestions": [
+    {
+      "title": "Short, descriptive title (max 100 chars)",
+      "description": "2-3 sentence description of what this module will cover and why it's important"
+    }
+  ]
+}`, count, mainTopic, audience, difficulty, languageInstruction)
+}
+
+// RefineTopics takes approved suggestions and creates detailed topic outlines (Refinement Agency)
+func (c *Client) RefineTopics(ctx context.Context, mainTopic string, suggestions []TopicSuggestionResult, targetAudience, difficulty, language string) ([]RefinedTopicResult, error) {
+	prompt := c.buildRefinementPrompt(mainTopic, suggestions, targetAudience, difficulty, language)
+
+	result, err := c.generateJSON(ctx, prompt)
+	if err != nil {
+		return nil, err
+	}
+
+	var refined struct {
+		Topics []RefinedTopicResult `json:"topics"`
+	}
+	if err := json.Unmarshal([]byte(result), &refined); err != nil {
+		return nil, fmt.Errorf("failed to parse refined topics: %w", err)
+	}
+
+	return refined.Topics, nil
+}
+
+// RefinedTopicResult from the Refinement Agency
+type RefinedTopicResult struct {
+	OriginalTitle    string   `json:"originalTitle"`
+	Title            string   `json:"title"`
+	Description      string   `json:"description"`
+	LearningGoals    []string `json:"learningGoals"`
+	KeyPoints        []string `json:"keyPoints"`
+	EstimatedTimeMin int      `json:"estimatedTimeMin"`
+}
+
+func (c *Client) buildRefinementPrompt(mainTopic string, suggestions []TopicSuggestionResult, targetAudience, difficulty, language string) string {
+	audience := targetAudience
+	if audience == "" {
+		audience = "professionals"
+	}
+	if difficulty == "" {
+		difficulty = "intermediate"
+	}
+	if language == "" {
+		language = "en"
+	}
+
+	topicsJSON, _ := json.Marshal(suggestions)
+	languageInstruction := getLanguageInstruction(language)
+
+	return fmt.Sprintf(`You are a Refinement Agency specializing in instructional design for cybersecurity training.
+
+Your task is to refine and expand the following approved topics into detailed lesson outlines:
+
+Main Course Topic: %s
+Target Audience: %s
+Difficulty Level: %s
+
+%s
+
+Approved Topics to Refine:
+%s
+
+For each topic, create a detailed outline including:
+1. A refined, compelling title
+2. An expanded description
+3. 3-5 specific learning goals (what the learner will be able to do)
+4. 4-6 key points to cover
+5. Estimated time in minutes (typically 5-15 min per lesson)
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "topics": [
+    {
+      "originalTitle": "Original title from input",
+      "title": "Refined, compelling title",
+      "description": "Detailed 2-3 sentence description",
+      "learningGoals": ["Goal 1", "Goal 2", "Goal 3"],
+      "keyPoints": ["Point 1", "Point 2", "Point 3", "Point 4"],
+      "estimatedTimeMin": 10
+    }
+  ]
+}`, mainTopic, audience, difficulty, languageInstruction, string(topicsJSON))
+}
+
+// GenerateLessonScripts creates detailed video scripts for refined topics (Script Agency)
+func (c *Client) GenerateLessonScripts(ctx context.Context, mainTopic string, topics []RefinedTopicResult, targetAudience, difficulty, language string) ([]LessonScriptResult, error) {
+	var scripts []LessonScriptResult
+
+	for _, topic := range topics {
+		script, err := c.generateSingleScript(ctx, mainTopic, topic, targetAudience, difficulty, language)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate script for %s: %w", topic.Title, err)
+		}
+		scripts = append(scripts, *script)
+	}
+
+	return scripts, nil
+}
+
+// LessonScriptResult from the Script Agency
+type LessonScriptResult struct {
+	TopicTitle  string `json:"topicTitle"`
+	Title       string `json:"title"`
+	Script      string `json:"script"`
+	DurationMin int    `json:"durationMin"`
+}
+
+func (c *Client) generateSingleScript(ctx context.Context, mainTopic string, topic RefinedTopicResult, targetAudience, difficulty, language string) (*LessonScriptResult, error) {
+	audience := targetAudience
+	if audience == "" {
+		audience = "professionals"
+	}
+	if difficulty == "" {
+		difficulty = "intermediate"
+	}
+	if language == "" {
+		language = "en"
+	}
+
+	learningGoalsJSON, _ := json.Marshal(topic.LearningGoals)
+	keyPointsJSON, _ := json.Marshal(topic.KeyPoints)
+	languageInstruction := getLanguageInstruction(language)
+
+	prompt := fmt.Sprintf(`You are a Script Agency specializing in creating engaging video scripts for cybersecurity training.
+
+Your task is to create a complete, ready-to-record video script for the following lesson:
+
+Course: %s
+Lesson Title: %s
+Description: %s
+Learning Goals: %s
+Key Points to Cover: %s
+Target Duration: %d minutes
+Target Audience: %s
+Difficulty Level: %s
+
+%s
+
+Create an engaging, professional video script that:
+1. Opens with a hook that captures attention
+2. Clearly states what the viewer will learn
+3. Covers all key points with examples and practical advice
+4. Uses clear, conversational language suitable for video
+5. Includes natural transitions between sections
+6. Ends with a summary and call-to-action
+7. Is appropriately paced for the target duration (roughly 150 words per minute)
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "topicTitle": "%s",
+  "title": "Video title",
+  "script": "Full video script text here...",
+  "durationMin": %d
+}`, mainTopic, topic.Title, topic.Description, string(learningGoalsJSON), string(keyPointsJSON),
+		topic.EstimatedTimeMin, audience, difficulty, languageInstruction, topic.Title, topic.EstimatedTimeMin)
+
+	result, err := c.generateJSON(ctx, prompt)
+	if err != nil {
+		return nil, err
+	}
+
+	var script LessonScriptResult
+	if err := json.Unmarshal([]byte(result), &script); err != nil {
+		return nil, fmt.Errorf("failed to parse script: %w", err)
+	}
+
+	return &script, nil
+}
+
+// generateJSON is a helper for making JSON-formatted requests to Ollama
+func (c *Client) generateJSON(ctx context.Context, prompt string) (string, error) {
+	ollamaReq := generateRequest{
+		Model:  c.model,
+		Prompt: prompt,
+		Stream: false,
+		Format: "json",
+	}
+
+	body, err := json.Marshal(ollamaReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/generate", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	c.setAuthHeader(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("ollama returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var ollamaResp generateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Clean the response (remove markdown code blocks if present)
+	result := strings.TrimSpace(ollamaResp.Response)
+
+	// Handle markdown code blocks more robustly
+	if strings.HasPrefix(result, "```json") {
+		result = strings.TrimPrefix(result, "```json")
+	} else if strings.HasPrefix(result, "```") {
+		result = strings.TrimPrefix(result, "```")
+	}
+
+	// Remove closing backticks - they might be on a separate line
+	if idx := strings.LastIndex(result, "```"); idx != -1 {
+		result = result[:idx]
+	}
+
+	result = strings.TrimSpace(result)
+
+	return result, nil
+}
+
 func (c *Client) HealthCheck(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -697,4 +1007,223 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// QuizQuestionResult represents a generated quiz question
+type QuizQuestionResult struct {
+	QuestionType string          `json:"questionType"`
+	QuestionText string          `json:"questionText"`
+	QuestionData json.RawMessage `json:"questionData"`
+	Points       int             `json:"points"`
+}
+
+// GenerateQuizQuestions generates quiz questions based on the course content
+func (c *Client) GenerateQuizQuestions(ctx context.Context, courseTitle string, lessonScripts []string, language string, count int) ([]domain.GeneratedQuestion, error) {
+	if count <= 0 {
+		count = 10
+	}
+	if language == "" {
+		language = "en"
+	}
+
+	// Combine lesson scripts into context
+	contentSummary := ""
+	for i, script := range lessonScripts {
+		contentSummary += fmt.Sprintf("\n--- Lesson %d ---\n%s\n", i+1, script)
+	}
+
+	languageInstruction := getLanguageInstruction(language)
+
+	prompt := fmt.Sprintf(`You are a Quiz Designer specializing in creating comprehensive assessments for cybersecurity training.
+
+Your task is to create %d quiz questions based on the following course content:
+
+Course Title: %s
+Content:
+%s
+
+%s
+
+Create exactly %d questions with this distribution:
+- 4 multiple_choice questions
+- 2 drag_drop questions
+- 2 fill_blank questions
+- 1 matching question
+- 1 ordering question
+
+Each question should:
+1. Be directly related to the course content
+2. Test understanding, not just memorization
+3. Have clear, unambiguous answers
+4. Include helpful explanations
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "questions": [
+    {
+      "questionType": "multiple_choice",
+      "questionText": "Question text?",
+      "questionData": {
+        "options": ["Option A", "Option B", "Option C", "Option D"],
+        "correctIndices": [0],
+        "explanation": "Explanation of correct answer"
+      },
+      "points": 10
+    },
+    {
+      "questionType": "drag_drop",
+      "questionText": "Match items to categories",
+      "questionData": {
+        "items": ["Item 1", "Item 2"],
+        "dropZones": ["Zone A", "Zone B"],
+        "correctMapping": {"Item 1": "Zone A", "Item 2": "Zone B"},
+        "explanation": "Explanation"
+      },
+      "points": 10
+    },
+    {
+      "questionType": "fill_blank",
+      "questionText": "Fill in the blanks",
+      "questionData": {
+        "template": "The {{blank}} is used for {{blank}}.",
+        "blanks": ["answer1", "answer2"],
+        "explanation": "Explanation"
+      },
+      "points": 10
+    },
+    {
+      "questionType": "matching",
+      "questionText": "Match the terms",
+      "questionData": {
+        "leftItems": ["Term 1", "Term 2"],
+        "rightItems": ["Definition 1", "Definition 2"],
+        "correctPairs": {"Term 1": "Definition 1", "Term 2": "Definition 2"},
+        "explanation": "Explanation"
+      },
+      "points": 10
+    },
+    {
+      "questionType": "ordering",
+      "questionText": "Put in correct order",
+      "questionData": {
+        "items": ["Step 1", "Step 2", "Step 3"],
+        "correctOrder": [0, 1, 2],
+        "explanation": "Explanation"
+      },
+      "points": 10
+    }
+  ]
+}
+
+Ensure all questions are worth 10 points each for a total of 100 points.`, count, courseTitle, contentSummary, languageInstruction, count)
+
+	result, err := c.generateJSON(ctx, prompt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate questions: %w", err)
+	}
+
+	var questionsResult struct {
+		Questions []QuizQuestionResult `json:"questions"`
+	}
+	if err := json.Unmarshal([]byte(result), &questionsResult); err != nil {
+		return nil, fmt.Errorf("failed to parse questions: %w", err)
+	}
+
+	// Convert to domain questions
+	var domainQuestions []domain.GeneratedQuestion
+	for _, q := range questionsResult.Questions {
+		qType := normalizeQuestionType(q.QuestionType)
+		if qType == "" {
+			log.Printf("Warning: Skipping question with invalid type: %s", q.QuestionType)
+			continue
+		}
+
+		// Validate question data
+		validatedData, err := c.validateQuestionData(qType, q.QuestionData)
+		if err != nil {
+			log.Printf("Warning: Skipping question with invalid data: %v", err)
+			continue
+		}
+
+		points := q.Points
+		if points <= 0 {
+			points = 10
+		}
+
+		domainQuestions = append(domainQuestions, domain.GeneratedQuestion{
+			QuestionType: qType,
+			QuestionText: q.QuestionText,
+			QuestionData: validatedData,
+			Points:       points,
+		})
+	}
+
+	// If no questions generated, use defaults
+	if len(domainQuestions) == 0 {
+		log.Printf("No valid questions generated, using defaults for: %s", courseTitle)
+		domainQuestions = c.generateDefaultQuestions(courseTitle)
+	}
+
+	return domainQuestions, nil
+}
+
+// PresentationSlideResult represents a single slide generated by the AI
+type PresentationSlideResult struct {
+	Title         string `json:"title"`
+	Content       string `json:"content"`       // HTML/Markdown for the slide
+	Script        string `json:"script"`        // Narration text for TTS
+	ImageKeywords string `json:"imageKeywords"` // Keywords for stock image search
+}
+
+// GeneratePresentationSlides creates presentation slides from a lesson script
+func (c *Client) GeneratePresentationSlides(ctx context.Context, lessonTitle string, script string, language string) ([]PresentationSlideResult, error) {
+	if language == "" {
+		language = "en"
+	}
+
+	languageInstruction := getLanguageInstruction(language)
+
+	prompt := fmt.Sprintf(`You are a Presentation Designer specializing in creating engaging educational slide presentations.
+
+Your task is to convert the following lesson script into a series of presentation slides:
+
+Lesson Title: %s
+Script:
+%s
+
+%s
+
+Create 5-8 presentation slides that:
+1. Break the content into logical sections
+2. Each slide should have a clear title
+3. Content should be concise bullet points or short paragraphs (suitable for slides)
+4. Include the narration script (what the presenter says) separately from the visual content
+5. Use HTML formatting for the content (bullet lists with <ul><li>, bold with <strong>, etc.)
+6. For each slide, provide 2-4 keywords for finding a relevant stock photo (e.g., "cybersecurity network protection", "data encryption lock")
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "slides": [
+    {
+      "title": "Slide title",
+      "content": "<ul><li>Bullet point 1</li><li>Bullet point 2</li></ul>",
+      "script": "Full narration text for this slide that will be converted to audio...",
+      "imageKeywords": "keyword1 keyword2 keyword3"
+    }
+  ]
+}`, lessonTitle, script, languageInstruction)
+
+	result, err := c.generateJSON(ctx, prompt)
+	if err != nil {
+		return nil, err
+	}
+
+	var slides struct {
+		Slides []PresentationSlideResult `json:"slides"`
+	}
+	if err := json.Unmarshal([]byte(result), &slides); err != nil {
+		return nil, fmt.Errorf("failed to parse slides: %w", err)
+	}
+
+	return slides.Slides, nil
 }

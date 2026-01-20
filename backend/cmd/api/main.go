@@ -20,9 +20,12 @@ import (
 	"github.com/secusense/backend/internal/usecase/course"
 	"github.com/secusense/backend/internal/usecase/enrollment"
 	"github.com/secusense/backend/internal/usecase/test"
+	"github.com/secusense/backend/internal/usecase/workflow"
 	"github.com/secusense/backend/infrastructure/database"
 	"github.com/secusense/backend/infrastructure/ollama"
 	"github.com/secusense/backend/infrastructure/synthesia"
+	"github.com/secusense/backend/infrastructure/tts"
+	"github.com/secusense/backend/infrastructure/unsplash"
 	"github.com/secusense/backend/pkg/jwt"
 	"github.com/secusense/backend/pkg/pdf"
 )
@@ -53,6 +56,8 @@ func main() {
 	answerRepo := postgres.NewUserAnswerRepository(db)
 	certRepo := postgres.NewCertificateRepository(db)
 	aiJobRepo := postgres.NewAIGenerationJobRepository(db)
+	workflowRepo := postgres.NewWorkflowRepository(db)
+	presentationRepo := postgres.NewPresentationRepository(db)
 
 	// Initialize JWT manager
 	jwtManager := jwt.NewManager(
@@ -65,6 +70,8 @@ func main() {
 	// Initialize external clients
 	ollamaClient := ollama.NewClient(cfg.Ollama)
 	synthesiaClient := synthesia.NewClient(cfg.Synthesia)
+	ttsClient := tts.NewClient(cfg.TTS)
+	unsplashClient := unsplash.NewClient(cfg.Unsplash)
 
 	// Initialize PDF generator
 	pdfGen := pdf.NewCertificateGenerator("https://secusense.example.com")
@@ -76,6 +83,7 @@ func main() {
 	testUC := test.NewUseCase(testRepo, questionRepo, attemptRepo, answerRepo, enrollmentRepo, courseRepo)
 	certUC := certificate.NewUseCase(certRepo, attemptRepo, pdfGen)
 	aiUC := ai.NewUseCase(aiJobRepo, courseRepo, courseContentRepo, testRepo, questionRepo, ollamaClient, synthesiaClient)
+	workflowUC := workflow.NewUseCase(workflowRepo, presentationRepo, courseRepo, testRepo, questionRepo, ollamaClient, synthesiaClient, ttsClient, unsplashClient)
 
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtManager)
@@ -87,6 +95,7 @@ func main() {
 	testHandler := handler.NewTestHandler(testUC)
 	certHandler := handler.NewCertificateHandler(certUC)
 	aiHandler := handler.NewAIHandler(aiUC)
+	workflowHandler := handler.NewWorkflowHandler(workflowUC)
 
 	// Initialize router
 	router := httpDelivery.NewRouter(
@@ -100,6 +109,7 @@ func main() {
 		testHandler,
 		certHandler,
 		aiHandler,
+		workflowHandler,
 	)
 
 	// Create server
@@ -119,12 +129,39 @@ func main() {
 		}
 	}()
 
+	// Start background video status polling (every 5 minutes)
+	stopPolling := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+
+		// Initial poll on startup (after a short delay)
+		time.Sleep(30 * time.Second)
+		if err := aiUC.PollPendingVideos(context.Background()); err != nil {
+			log.Printf("Video polling error: %v", err)
+		}
+
+		for {
+			select {
+			case <-ticker.C:
+				if err := aiUC.PollPendingVideos(context.Background()); err != nil {
+					log.Printf("Video polling error: %v", err)
+				}
+			case <-stopPolling:
+				return
+			}
+		}
+	}()
+
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	log.Println("Shutting down server...")
+
+	// Stop background polling
+	close(stopPolling)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

@@ -1,10 +1,15 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogModule } from 'primeng/dialog';
+import { InputTextModule } from 'primeng/inputtext';
+import { InputTextareaModule } from 'primeng/inputtextarea';
+import { SliderModule } from 'primeng/slider';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { CourseService, Course } from '@core/services/course.service';
 
@@ -14,10 +19,15 @@ import { CourseService, Course } from '@core/services/course.service';
   imports: [
     CommonModule,
     RouterLink,
+    ReactiveFormsModule,
     TableModule,
     ButtonModule,
     TagModule,
-    ConfirmDialogModule
+    ConfirmDialogModule,
+    DialogModule,
+    InputTextModule,
+    InputTextareaModule,
+    SliderModule
   ],
   providers: [ConfirmationService],
   template: `
@@ -33,8 +43,11 @@ import { CourseService, Course } from '@core/services/course.service';
           <a routerLink="/dashboard">
             <p-button label="Dashboard" icon="pi pi-home" [outlined]="true"></p-button>
           </a>
+          <a routerLink="/admin/workflow">
+            <p-button label="AI Workflow" icon="pi pi-sitemap"></p-button>
+          </a>
           <a routerLink="/admin/generate">
-            <p-button label="Generate Course" icon="pi pi-sparkles"></p-button>
+            <p-button label="Quick Generate" icon="pi pi-sparkles" [outlined]="true"></p-button>
           </a>
         </div>
       </header>
@@ -92,6 +105,20 @@ import { CourseService, Course } from '@core/services/course.service';
                 <a [routerLink]="['/courses', course.id]">
                   <p-button icon="pi pi-eye" [rounded]="true" [text]="true" pTooltip="View"></p-button>
                 </a>
+                <p-button
+                  icon="pi pi-pencil"
+                  [rounded]="true"
+                  [text]="true"
+                  severity="secondary"
+                  pTooltip="Edit"
+                  (onClick)="openEditDialog(course)"
+                ></p-button>
+                <a [routerLink]="['/admin/courses', course.id, 'questions']">
+                  <p-button icon="pi pi-question-circle" [rounded]="true" [text]="true" severity="info" pTooltip="Edit Questions"></p-button>
+                </a>
+                <a [routerLink]="['/admin/courses', course.id, 'lessons']">
+                  <p-button icon="pi pi-book" [rounded]="true" [text]="true" severity="help" pTooltip="Edit Lessons"></p-button>
+                </a>
                 @if (course.isPublished) {
                   <p-button
                     icon="pi pi-eye-slash"
@@ -134,6 +161,53 @@ import { CourseService, Course } from '@core/services/course.service';
           </tr>
         </ng-template>
       </p-table>
+
+      <!-- Edit Course Dialog -->
+      <p-dialog
+        header="Edit Course"
+        [(visible)]="showEditDialog"
+        [modal]="true"
+        [style]="{ width: '600px' }"
+      >
+        <form [formGroup]="editForm" (ngSubmit)="saveCourse()">
+          <div class="form-field">
+            <label for="editTitle">Title *</label>
+            <input pInputText id="editTitle" formControlName="title" class="w-full" />
+          </div>
+          <div class="form-field">
+            <label for="editDescription">Description *</label>
+            <textarea
+              pInputTextarea
+              id="editDescription"
+              formControlName="description"
+              rows="5"
+              class="w-full"
+            ></textarea>
+          </div>
+          <div class="form-field">
+            <label>Pass Percentage: {{ editForm.get('passPercentage')?.value }}%</label>
+            <p-slider
+              formControlName="passPercentage"
+              [min]="50"
+              [max]="100"
+            ></p-slider>
+          </div>
+          <div class="dialog-actions">
+            <p-button
+              label="Cancel"
+              [outlined]="true"
+              (onClick)="showEditDialog = false"
+            ></p-button>
+            <p-button
+              type="submit"
+              label="Save Changes"
+              icon="pi pi-check"
+              [disabled]="editForm.invalid"
+              [loading]="saving()"
+            ></p-button>
+          </div>
+        </form>
+      </p-dialog>
     </div>
   `,
   styles: [`
@@ -186,18 +260,53 @@ import { CourseService, Course } from '@core/services/course.service';
     .empty-state-inline i {
       font-size: 1.5rem;
     }
+
+    .form-field {
+      margin-bottom: 1.25rem;
+    }
+
+    .form-field label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--surface-border);
+    }
+
+    .w-full {
+      width: 100%;
+    }
   `]
 })
 export class AdminCourseListComponent implements OnInit {
   courses = signal<Course[]>([]);
   loading = signal(true);
   totalRecords = signal(0);
+  saving = signal(false);
+
+  showEditDialog = false;
+  editingCourse: Course | null = null;
+  editForm: FormGroup;
 
   constructor(
+    private fb: FormBuilder,
     private courseService: CourseService,
     private confirmationService: ConfirmationService,
     private messageService: MessageService
-  ) {}
+  ) {
+    this.editForm = this.fb.group({
+      title: ['', [Validators.required, Validators.minLength(3)]],
+      description: ['', [Validators.required, Validators.minLength(10)]],
+      passPercentage: [70, [Validators.required, Validators.min(50), Validators.max(100)]]
+    });
+  }
 
   ngOnInit(): void {
     this.loadCourses({ first: 0, rows: 10 });
@@ -282,6 +391,47 @@ export class AdminCourseListComponent implements OnInit {
           summary: 'Error',
           detail: 'Could not delete course'
         });
+      }
+    });
+  }
+
+  openEditDialog(course: Course): void {
+    this.editingCourse = course;
+    this.editForm.patchValue({
+      title: course.title,
+      description: course.description,
+      passPercentage: course.passPercentage
+    });
+    this.showEditDialog = true;
+  }
+
+  saveCourse(): void {
+    if (this.editForm.invalid || !this.editingCourse) return;
+
+    this.saving.set(true);
+    const updates = this.editForm.value;
+
+    this.courseService.updateCourse(this.editingCourse.id, updates).subscribe({
+      next: (updatedCourse) => {
+        this.courses.update(courses =>
+          courses.map(c => c.id === updatedCourse.id ? { ...c, ...updatedCourse } : c)
+        );
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Saved',
+          detail: 'Course has been updated'
+        });
+        this.saving.set(false);
+        this.showEditDialog = false;
+        this.editingCourse = null;
+      },
+      error: () => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Could not update course'
+        });
+        this.saving.set(false);
       }
     });
   }

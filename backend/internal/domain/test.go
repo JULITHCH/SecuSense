@@ -147,6 +147,22 @@ type CreateQuestionRequest struct {
 	OrderIndex   int             `json:"orderIndex"`
 }
 
+type UpdateQuestionRequest struct {
+	QuestionType QuestionType    `json:"questionType" validate:"required"`
+	QuestionText string          `json:"questionText" validate:"required,min=1"`
+	QuestionData json.RawMessage `json:"questionData" validate:"required"`
+	Points       int             `json:"points" validate:"required,min=1"`
+}
+
+type ReorderQuestionsRequest struct {
+	QuestionOrders []QuestionOrder `json:"questionOrders" validate:"required,min=1"`
+}
+
+type QuestionOrder struct {
+	QuestionID string `json:"questionId" validate:"required,uuid"`
+	OrderIndex int    `json:"orderIndex" validate:"min=0"`
+}
+
 type TestRepository interface {
 	Create(test *Test) error
 	GetByID(id uuid.UUID) (*Test, error)

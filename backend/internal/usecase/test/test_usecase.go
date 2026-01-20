@@ -476,3 +476,62 @@ func (uc *UseCase) getExplanation(question *domain.Question) string {
 		return ""
 	}
 }
+
+// UpdateQuestion updates an existing question
+func (uc *UseCase) UpdateQuestion(questionID uuid.UUID, req *domain.UpdateQuestionRequest) (*domain.Question, error) {
+	question, err := uc.questionRepo.GetByID(questionID)
+	if err != nil {
+		return nil, err
+	}
+	if question == nil {
+		return nil, errors.New("question not found")
+	}
+
+	question.QuestionType = req.QuestionType
+	question.QuestionText = req.QuestionText
+	question.QuestionData = req.QuestionData
+	question.Points = req.Points
+
+	if err := uc.questionRepo.Update(question); err != nil {
+		return nil, err
+	}
+
+	return question, nil
+}
+
+// DeleteQuestion deletes a question
+func (uc *UseCase) DeleteQuestion(questionID uuid.UUID) error {
+	question, err := uc.questionRepo.GetByID(questionID)
+	if err != nil {
+		return err
+	}
+	if question == nil {
+		return errors.New("question not found")
+	}
+
+	return uc.questionRepo.Delete(questionID)
+}
+
+// GetQuestionsByTestID retrieves all questions for a test
+func (uc *UseCase) GetQuestionsByTestID(testID uuid.UUID) ([]*domain.Question, error) {
+	return uc.questionRepo.GetByTestID(testID)
+}
+
+// GetTestByCourseIDWithQuestions retrieves a test with all questions for editing
+func (uc *UseCase) GetTestByCourseIDWithQuestions(courseID uuid.UUID) (*domain.Test, error) {
+	test, err := uc.testRepo.GetByCourseID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if test == nil {
+		return nil, ErrTestNotFound
+	}
+
+	questions, err := uc.questionRepo.GetByTestID(test.ID)
+	if err != nil {
+		return nil, err
+	}
+	test.Questions = questions
+
+	return test, nil
+}

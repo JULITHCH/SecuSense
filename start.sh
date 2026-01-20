@@ -15,6 +15,7 @@ cd "$SCRIPT_DIR"
 
 OLLAMA_KEY_FILE="$SCRIPT_DIR/.ollama_api_key"
 SYNTHESIA_KEY_FILE="$SCRIPT_DIR/.synthesia_api_key"
+UNSPLASH_KEY_FILE="$SCRIPT_DIR/.unsplash_api_key"
 
 # Get or prompt for Ollama Cloud API key
 get_ollama_api_key() {
@@ -173,6 +174,88 @@ prompt_synthesia_key_simple() {
     echo "$key"
 }
 
+# Get or prompt for Unsplash API key
+get_unsplash_api_key() {
+    local key=""
+
+    # Try to load existing key
+    if [[ -f "$UNSPLASH_KEY_FILE" ]]; then
+        key=$(cat "$UNSPLASH_KEY_FILE" 2>/dev/null)
+        if [[ -n "$key" ]]; then
+            echo "$key"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+# Prompt for Unsplash API key (TUI version) - sets UNSPLASH_API_KEY variable
+prompt_unsplash_key_tui() {
+    local cmd=$1
+    UNSPLASH_API_KEY=""
+
+    # Check for existing key
+    if UNSPLASH_API_KEY=$(get_unsplash_api_key); then
+        if $cmd --title "Unsplash" --yesno "Found saved Unsplash API key.\n\nUse existing key?" 10 50; then
+            return 0
+        fi
+        UNSPLASH_API_KEY=""
+    fi
+
+    # Ask if they want to configure Unsplash
+    if ! $cmd --title "Unsplash Stock Images" --yesno "Configure Unsplash for stock images in presentations?\n\n(Optional - presentations will work without it)" 10 55; then
+        return 0
+    fi
+
+    # Prompt for new key
+    UNSPLASH_API_KEY=$($cmd --title "Unsplash API Key" \
+        --inputbox "Enter your Unsplash Access Key:\n\n(Get one at unsplash.com/developers)" 12 60 \
+        3>&1 1>&2 2>&3) || return 0
+
+    if [[ -n "$UNSPLASH_API_KEY" ]]; then
+        # Save the key
+        echo "$UNSPLASH_API_KEY" > "$UNSPLASH_KEY_FILE"
+        chmod 600 "$UNSPLASH_KEY_FILE"
+    fi
+}
+
+# Prompt for Unsplash API key (simple version)
+prompt_unsplash_key_simple() {
+    local key=""
+
+    # Check for existing key
+    if key=$(get_unsplash_api_key); then
+        echo -e "${GREEN}Found saved Unsplash API key.${NC}"
+        read -p "Use existing key? [Y/n]: " use_existing
+        if [[ ! "$use_existing" =~ ^[Nn]$ ]]; then
+            echo "$key"
+            return 0
+        fi
+    fi
+
+    # Ask if they want to configure Unsplash
+    echo ""
+    read -p "Configure Unsplash for stock images in presentations? (optional) [y/N]: " configure
+    if [[ ! "$configure" =~ ^[Yy]$ ]]; then
+        echo ""
+        return 0
+    fi
+
+    # Prompt for new key
+    echo ""
+    echo -e "${CYAN}Get your Access Key at: https://unsplash.com/developers${NC}"
+    echo ""
+    read -p "Enter Unsplash Access Key (or press Enter to skip): " key
+
+    if [[ -n "$key" ]]; then
+        # Save the key
+        echo "$key" > "$UNSPLASH_KEY_FILE"
+        chmod 600 "$UNSPLASH_KEY_FILE"
+    fi
+    echo "$key"
+}
+
 # Detect if native Ollama is running
 check_native_ollama() {
     if curl -s --connect-timeout 2 http://localhost:11434/api/tags >/dev/null 2>&1; then
@@ -186,24 +269,25 @@ start_services() {
     local ollama_mode=$1
     local ollama_key=$2
     local synthesia_key=$3
+    local unsplash_key=$4
 
     echo -e "${CYAN}Starting SecuSense...${NC}"
 
-    # Build environment variables
-    local env_vars="SYNTHESIA_APIKEY=\"$synthesia_key\""
+    # Common environment variables
+    local common_env="SYNTHESIA_APIKEY=\"$synthesia_key\" UNSPLASH_ACCESSKEY=\"$unsplash_key\""
 
     case $ollama_mode in
         docker)
             echo -e "${BLUE}Starting with Docker Ollama${NC}"
-            OLLAMA_URL="http://ollama:11434" SYNTHESIA_APIKEY="$synthesia_key" docker compose --profile with-ollama up -d
+            OLLAMA_URL="http://ollama:11434" SYNTHESIA_APIKEY="$synthesia_key" UNSPLASH_ACCESSKEY="$unsplash_key" docker compose --profile with-ollama up -d --build --force-recreate
             ;;
         cloud)
             echo -e "${BLUE}Using Ollama Cloud${NC}"
-            OLLAMA_URL="https://ollama.com" OLLAMA_CLOUDMODE=true OLLAMA_APIKEY="$ollama_key" SYNTHESIA_APIKEY="$synthesia_key" docker compose up -d
+            OLLAMA_URL="https://ollama.com" OLLAMA_CLOUDMODE=true OLLAMA_APIKEY="$ollama_key" SYNTHESIA_APIKEY="$synthesia_key" UNSPLASH_ACCESSKEY="$unsplash_key" docker compose up -d --build --force-recreate
             ;;
         *)
             echo -e "${BLUE}Using native Ollama (host.docker.internal:11434)${NC}"
-            SYNTHESIA_APIKEY="$synthesia_key" docker compose up -d
+            SYNTHESIA_APIKEY="$synthesia_key" UNSPLASH_ACCESSKEY="$unsplash_key" docker compose up -d --build --force-recreate
             ;;
     esac
 
@@ -266,20 +350,23 @@ show_tui_menu() {
     # Prompt for Synthesia key (used by all modes) - sets SYNTHESIA_API_KEY
     prompt_synthesia_key_tui "$cmd"
 
+    # Prompt for Unsplash key (used by all modes) - sets UNSPLASH_API_KEY
+    prompt_unsplash_key_tui "$cmd"
+
     case $choice in
         native)
             if ! check_native_ollama; then
                 $cmd --title "Warning" --yesno "Native Ollama not detected.\n\nMake sure Ollama is running:\n  ollama serve\n\nContinue anyway?" 12 50 || exit 0
             fi
-            start_services "native" "" "$SYNTHESIA_API_KEY"
+            start_services "native" "" "$SYNTHESIA_API_KEY" "$UNSPLASH_API_KEY"
             ;;
         docker)
-            start_services "docker" "" "$SYNTHESIA_API_KEY"
+            start_services "docker" "" "$SYNTHESIA_API_KEY" "$UNSPLASH_API_KEY"
             ;;
         cloud)
             # Prompt for Ollama key - sets OLLAMA_API_KEY
             prompt_api_key_tui "$cmd" || exit 0
-            start_services "cloud" "$OLLAMA_API_KEY" "$SYNTHESIA_API_KEY"
+            start_services "cloud" "$OLLAMA_API_KEY" "$SYNTHESIA_API_KEY" "$UNSPLASH_API_KEY"
             ;;
     esac
 }
@@ -313,10 +400,12 @@ show_simple_menu() {
 
     read -p "Enter choice [1-5]: " choice
 
-    # Skip Synthesia prompt for stop/exit
+    # Skip API prompts for stop/exit
     local synthesia_key=""
+    local unsplash_key=""
     if [[ "$choice" =~ ^[1-3]$ ]]; then
         synthesia_key=$(prompt_synthesia_key_simple)
+        unsplash_key=$(prompt_unsplash_key_simple)
     fi
 
     case $choice in
@@ -326,16 +415,16 @@ show_simple_menu() {
                 read -p "Continue anyway? [y/N]: " confirm
                 [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
             fi
-            start_services "native" "" "$synthesia_key"
+            start_services "native" "" "$synthesia_key" "$unsplash_key"
             ;;
         2)
-            start_services "docker" "" "$synthesia_key"
+            start_services "docker" "" "$synthesia_key" "$unsplash_key"
             ;;
         3)
             echo -e "${CYAN}Using Ollama Cloud.${NC}"
             local ollama_key
             ollama_key=$(prompt_api_key_simple) || exit 0
-            start_services "cloud" "$ollama_key" "$synthesia_key"
+            start_services "cloud" "$ollama_key" "$synthesia_key" "$unsplash_key"
             ;;
         4)
             echo -e "${CYAN}Stopping SecuSense...${NC}"

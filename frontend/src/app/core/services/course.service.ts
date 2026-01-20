@@ -43,6 +43,33 @@ export interface UpdateCourseRequest {
   isPublished?: boolean;
 }
 
+export interface PresentationSlide {
+  title: string;
+  content: string;
+  script: string;
+  audioUrl: string;
+}
+
+export interface LessonPresentation {
+  id: string;
+  lessonId: string;
+  slides: PresentationSlide[];
+  status: string;
+  createdAt: string;
+}
+
+export type OutputType = 'video' | 'presentation';
+
+export interface CourseLesson {
+  id: string;
+  title: string;
+  outputType: OutputType;
+  videoUrl?: string;
+  videoStatus?: string;
+  presentationStatus?: string;
+  presentation?: LessonPresentation;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -61,6 +88,10 @@ export class CourseService {
 
   getCourseById(id: string): Observable<Course> {
     return this.http.get<Course>(`${this.API_URL}/courses/${id}`);
+  }
+
+  getCourseLessons(courseId: string): Observable<CourseLesson[]> {
+    return this.http.get<CourseLesson[]>(`${this.API_URL}/courses/${courseId}/lessons`);
   }
 
   // Admin methods

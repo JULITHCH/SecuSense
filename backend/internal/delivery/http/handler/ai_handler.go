@@ -106,3 +106,20 @@ func (h *AIHandler) PollPendingVideos(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "polling complete"})
 }
+
+func (h *AIHandler) GetVideoURL(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid course ID")
+		return
+	}
+
+	videoURL, err := h.aiUC.GetFreshVideoURL(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"videoUrl": videoURL})
+}

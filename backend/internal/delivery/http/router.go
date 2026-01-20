@@ -11,14 +11,15 @@ import (
 )
 
 type Router struct {
-	chi            *chi.Mux
-	authMiddleware *authMiddleware.AuthMiddleware
-	authHandler    *handler.AuthHandler
-	courseHandler  *handler.CourseHandler
-	enrollHandler  *handler.EnrollmentHandler
-	testHandler    *handler.TestHandler
-	certHandler    *handler.CertificateHandler
-	aiHandler      *handler.AIHandler
+	chi             *chi.Mux
+	authMiddleware  *authMiddleware.AuthMiddleware
+	authHandler     *handler.AuthHandler
+	courseHandler   *handler.CourseHandler
+	enrollHandler   *handler.EnrollmentHandler
+	testHandler     *handler.TestHandler
+	certHandler     *handler.CertificateHandler
+	aiHandler       *handler.AIHandler
+	workflowHandler *handler.WorkflowHandler
 }
 
 type RouterConfig struct {
@@ -34,16 +35,18 @@ func NewRouter(
 	testH *handler.TestHandler,
 	certH *handler.CertificateHandler,
 	aiH *handler.AIHandler,
+	workflowH *handler.WorkflowHandler,
 ) *Router {
 	r := &Router{
-		chi:            chi.NewRouter(),
-		authMiddleware: authMW,
-		authHandler:    authH,
-		courseHandler:  courseH,
-		enrollHandler:  enrollH,
-		testHandler:    testH,
-		certHandler:    certH,
-		aiHandler:      aiH,
+		chi:             chi.NewRouter(),
+		authMiddleware:  authMW,
+		authHandler:     authH,
+		courseHandler:   courseH,
+		enrollHandler:   enrollH,
+		testHandler:     testH,
+		certHandler:     certH,
+		aiHandler:       aiH,
+		workflowHandler: workflowH,
 	}
 
 	// Global middleware
@@ -88,9 +91,17 @@ func (r *Router) setupRoutes() {
 		// Public course listing
 		api.Get("/courses", r.courseHandler.List)
 		api.Get("/courses/{id}", r.courseHandler.GetByID)
+		api.Get("/courses/{courseId}/lessons", r.workflowHandler.GetCourseLessons)
 
 		// Synthesia webhook (public but should be secured in production)
 		api.Post("/webhooks/synthesia", r.aiHandler.SynthesiaWebhook)
+
+		// Serve generated audio files for presentations (public)
+		api.Get("/audio/*", func(w http.ResponseWriter, req *http.Request) {
+			// Serve files from the generated/audio directory
+			fs := http.StripPrefix("/api/v1/audio/", http.FileServer(http.Dir("./generated/audio")))
+			fs.ServeHTTP(w, req)
+		})
 
 		// Protected routes
 		api.Group(func(protected chi.Router) {
@@ -102,6 +113,7 @@ func (r *Router) setupRoutes() {
 			// Course enrollment
 			protected.Post("/courses/{id}/enroll", r.enrollHandler.Enroll)
 			protected.Get("/courses/{courseId}/test", r.testHandler.GetByCourseID)
+			protected.Get("/courses/{id}/video-url", r.aiHandler.GetVideoURL)
 
 			// Enrollments
 			protected.Get("/enrollments", r.enrollHandler.List)
@@ -136,6 +148,11 @@ func (r *Router) setupRoutes() {
 				admin.Post("/admin/tests", r.testHandler.CreateTest)
 				admin.Post("/admin/questions", r.testHandler.CreateQuestion)
 
+				// Question management for existing courses
+				admin.Get("/admin/courses/{courseId}/questions", r.testHandler.GetQuestionsByCourseID)
+				admin.Put("/admin/questions/{questionId}", r.testHandler.UpdateQuestion)
+				admin.Delete("/admin/questions/{questionId}", r.testHandler.DeleteQuestion)
+
 				// AI generation
 				admin.Post("/admin/generate/course", r.aiHandler.GenerateCourse)
 				admin.Get("/admin/generate/jobs/{id}", r.aiHandler.GetJob)
@@ -143,6 +160,40 @@ func (r *Router) setupRoutes() {
 				// Video generation
 				admin.Post("/admin/courses/{id}/refresh-video", r.aiHandler.RefreshVideoStatus)
 				admin.Post("/admin/videos/poll", r.aiHandler.PollPendingVideos)
+
+				// Course Workflow (multi-agency)
+				admin.Post("/admin/workflow/start", r.workflowHandler.StartResearch)
+				admin.Get("/admin/workflow/{id}", r.workflowHandler.GetSession)
+				admin.Put("/admin/workflow/{sessionId}/suggestions/{suggestionId}", r.workflowHandler.UpdateSuggestionStatus)
+				admin.Post("/admin/workflow/{sessionId}/suggestions", r.workflowHandler.AddCustomTopic)
+				admin.Post("/admin/workflow/{sessionId}/generate-more", r.workflowHandler.GenerateMoreSuggestions)
+				admin.Post("/admin/workflow/{sessionId}/refine", r.workflowHandler.ProceedToRefinement)
+				admin.Post("/admin/workflow/{sessionId}/scripts", r.workflowHandler.ProceedToScriptGeneration)
+				admin.Post("/admin/workflow/{sessionId}/videos", r.workflowHandler.ProceedToVideoGeneration)
+
+				// Refined topic management
+				admin.Put("/admin/workflow/{sessionId}/topics/{topicId}", r.workflowHandler.UpdateRefinedTopic)
+				admin.Post("/admin/workflow/{sessionId}/topics/{topicId}/regenerate", r.workflowHandler.RegenerateTopic)
+				admin.Put("/admin/workflow/{sessionId}/topics/reorder", r.workflowHandler.ReorderRefinedTopics)
+
+				// Lesson script management
+				admin.Put("/admin/workflow/{sessionId}/lessons/{lessonId}", r.workflowHandler.UpdateLessonScript)
+				admin.Post("/admin/workflow/{sessionId}/lessons/{lessonId}/regenerate", r.workflowHandler.RegenerateScript)
+
+				// Presentation/Output type management
+				admin.Put("/admin/workflow/{sessionId}/lessons/{lessonId}/output-type", r.workflowHandler.SetOutputType)
+				admin.Post("/admin/workflow/{sessionId}/lessons/{lessonId}/presentation", r.workflowHandler.GeneratePresentation)
+				admin.Get("/admin/workflow/{sessionId}/lessons/{lessonId}/presentation", r.workflowHandler.GetPresentation)
+				admin.Post("/admin/workflow/{sessionId}/lessons/{lessonId}/regenerate-audio", r.workflowHandler.RegenerateAudio)
+
+				// Question generation
+				admin.Post("/admin/workflow/{sessionId}/questions", r.workflowHandler.ProceedToQuestionGeneration)
+				admin.Get("/admin/workflow/{sessionId}/questions/preview", r.workflowHandler.PreviewQuestions)
+
+				// Lesson management for completed courses
+				admin.Put("/admin/courses/{courseId}/lessons/{lessonId}", r.workflowHandler.UpdateLessonScriptForCourse)
+				admin.Post("/admin/courses/{courseId}/lessons/{lessonId}/regenerate", r.workflowHandler.RegenerateLessonScriptForCourse)
+				admin.Post("/admin/courses/{courseId}/lessons/{lessonId}/regenerate-presentation", r.workflowHandler.RegeneratePresentationForCourse)
 			})
 		})
 	})

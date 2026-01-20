@@ -38,9 +38,12 @@ services:
       SECUSENSE_OLLAMA_CLOUDMODE: ${OLLAMA_CLOUDMODE:-false}
       SECUSENSE_OLLAMA_APIKEY: ${OLLAMA_APIKEY:-}
       SECUSENSE_SYNTHESIA_APIKEY: ${SYNTHESIA_APIKEY:-}
+      SECUSENSE_UNSPLASH_ACCESSKEY: ${UNSPLASH_ACCESSKEY:-}
       SECUSENSE_SERVER_ALLOWORIGINS: http://localhost:4200,http://localhost
     ports:
       - "8080:8080"
+    volumes:
+      - audio_data:/root/generated/audio
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,3 +76,4 @@ services:
 volumes:
   postgres_data:
   ollama_data:
+  audio_data:

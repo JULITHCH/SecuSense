@@ -208,3 +208,72 @@ func stripCorrectAnswers(qType domain.QuestionType, data json.RawMessage) json.R
 	stripped, _ := json.Marshal(result)
 	return stripped
 }
+
+// GetQuestionsByCourseID retrieves all questions for a course (admin)
+func (h *TestHandler) GetQuestionsByCourseID(w http.ResponseWriter, r *http.Request) {
+	courseIDStr := chi.URLParam(r, "courseId")
+	courseID, err := uuid.Parse(courseIDStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid course ID")
+		return
+	}
+
+	testObj, err := h.testUC.GetTestByCourseIDWithQuestions(courseID)
+	if err != nil {
+		switch err {
+		case test.ErrTestNotFound:
+			respondError(w, http.StatusNotFound, err.Error())
+		default:
+			respondError(w, http.StatusInternalServerError, "failed to get questions")
+		}
+		return
+	}
+
+	respondJSON(w, http.StatusOK, testObj)
+}
+
+// UpdateQuestion updates a question
+func (h *TestHandler) UpdateQuestion(w http.ResponseWriter, r *http.Request) {
+	questionIDStr := chi.URLParam(r, "questionId")
+	questionID, err := uuid.Parse(questionIDStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid question ID")
+		return
+	}
+
+	var req domain.UpdateQuestionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.validate.Struct(req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	question, err := h.testUC.UpdateQuestion(questionID, &req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to update question: "+err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, question)
+}
+
+// DeleteQuestion deletes a question
+func (h *TestHandler) DeleteQuestion(w http.ResponseWriter, r *http.Request) {
+	questionIDStr := chi.URLParam(r, "questionId")
+	questionID, err := uuid.Parse(questionIDStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid question ID")
+		return
+	}
+
+	if err := h.testUC.DeleteQuestion(questionID); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to delete question: "+err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
